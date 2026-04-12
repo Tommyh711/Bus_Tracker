@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>London Live Bus Tracker</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { background:#0a0a0a; font-family: monospace; }
+  #bar {
+    background:#111;
+    border-bottom: 2px solid #E8002D;
+    padding: 10px 20px;
+    display: flex;
+    gap: 24px;
+    align-items: center;
+  }
+  .logo { font-size:1.6rem; font-weight:900; color:#E8002D; letter-spacing:3px; }
+  .logo span { color:#fff; }
+  .sl { font-size:8px; color:#888; text-transform:uppercase; letter-spacing:1px; }
+  .sv { font-size:13px; color:#00ff88; font-weight:700; }
+  #search { margin-left: auto; display: flex; gap: 8px; }
+  #route-input {
+    background: #000;
+    border: 1px solid #E8002D;
+    color: #fff;
+    padding: 6px 12px;
+    font-family: monospace;
+    font-size: 14px;
+    width: 80px;
+    text-transform: uppercase;
+  }
+  #search-btn {
+    background: #E8002D;
+    color: white;
+    border: none;
+    padding: 6px 16px;
+    font-family: monospace;
+    font-size: 14px;
+    font-weight: bold;
+    cursor: pointer;
+  }
+  #search-btn:hover { background: #ff1a45; }
+  #map { width:100%; height: calc(100vh - 52px); }
+</style>
+</head>
+<body>
+
+<div id="bar">
+  <div class="logo">BUS<span>LIVE</span></div>
+  <div><div class="sl">Buses on map</div><div class="sv" id="count">—</div></div>
+  <div><div class="sl">Route</div><div class="sv" id="route-label">—</div></div>
+  <div><div class="sl">Updated</div><div class="sv" id="ts">—</div></div>
+  <div id="search">
+    <input id="route-input" type="text" placeholder="e.g. 25" />
+    <button id="search-btn" onclick="searchRoute()">&#9654; TRACK</button>
+  </div>
+</div>
+
+<div id="map"></div>
+
+<script>
+  const SERVER = "http://localhost:5000";
+  let map, markers = {}, infoWindows = {};
+  let currentRoute = "25";
+  let refreshInterval = null;
+
+  function initMap() {
+    map = new google.maps.Map(document.getElementById("map"), {
+      center: { lat: 51.505, lng: -0.09 },
+      zoom: 12,
+      styles: [
+        { elementType: "geometry", stylers: [{ color: "#1a1a2e" }] },
+        { elementType: "labels.text.fill", stylers: [{ color: "#8888aa" }] },
+        { elementType: "labels.text.stroke", stylers: [{ color: "#1a1a2e" }] },
+        { featureType: "road", elementType: "geometry", stylers: [{ color: "#2a2a4a" }] },
+        { featureType: "road.arterial", elementType: "geometry", stylers: [{ color: "#3a3a5a" }] },
+        { featureType: "road.highway", elementType: "geometry", stylers: [{ color: "#4a4a6a" }] },
+        { featureType: "water", elementType: "geometry", stylers: [{ color: "#0a0a1a" }] },
+        { featureType: "poi", stylers: [{ visibility: "off" }] },
+        { featureType: "transit", stylers: [{ visibility: "off" }] },
+      ]
+    });
+    fetchBuses();
+    refreshInterval = setInterval(fetchBuses, 10000);
+  }
+
+  function searchRoute() {
+    const input = document.getElementById("route-input").value.trim().toUpperCase();
+    if (!input) return;
+    currentRoute = input;
+    Object.values(markers).forEach(m => m.setMap(null));
+    markers = {};
+    infoWindows = {};
+    clearInterval(refreshInterval);
+    fetchBuses();
+    refreshInterval = setInterval(fetchBuses, 10000);
+  }
+
+  function busIcon() {
+    return {
+      path: "M-10-14 L10-14 L10 10 L5 10 L5 15 L-5 15 L-5 10 L-10 10Z M-7-10 L-7-3 L7-3 L7-10Z",
+      fillColor: "#E8002D",
+      fillOpacity: 1,
+      strokeColor: "#ffffff",
+      strokeWeight: 1.5,
+      scale: 1.1,
+      anchor: new google.maps.Point(0, 15),
+    };
+  }
+
+  function animateTo(marker, newPos) {
+    const start = marker.getPosition();
+    const sLat = start.lat(), sLng = start.lng();
+    const eLat = newPos.lat, eLng = newPos.lng;
+    let step = 0;
+    const t = setInterval(() => {
+      step++;
+      const p = step / 50;
+      const e = p < 0.5 ? 2*p*p : -1+(4-2*p)*p;
+      marker.setPosition({ lat: sLat + (eLat - sLat) * e, lng: sLng + (eLng - sLng) * e });
+      if (step >= 50) clearInterval(t);
+    }, 20);
+  }
+
+  async function fetchBuses() {
+    try {
+      const resp = await fetch(`${SERVER}/buses/${currentRoute}`);
+      const data = await resp.json();
+      const buses = data.buses || [];
+      const currentIds = new Set();
+
+      buses.forEach(b => {
+        currentIds.add(b.id);
+        const pos = { lat: b.lat, lng: b.lon };
+        const content = `
+          <div style="background:#111;padding:12px;font-family:monospace;font-size:12px;color:#f0f0f0;border:1px solid #E8002D;min-width:200px">
+            <div style="color:#E8002D;font-size:16px;font-weight:900;margin-bottom:8px">Bus Line ${b.line}</div>
+            <div><span style="color:#888">To: </span><b style="color:#00ff88">${b.destination}</b></div>
+            <div><span style="color:#888">Vehicle: </span><b style="color:#00ff88">${b.id}</b></div>
+            <div><span style="color:#888">Operator: </span><b style="color:#00ff88">${b.operator}</b></div>
+            <div><span style="color:#888">Bearing: </span><b style="color:#00ff88">${b.bearing}deg</b></div>
+            <div><span style="color:#888">Coords: </span><b style="color:#00ff88">${b.lat.toFixed(5)}, ${b.lon.toFixed(5)}</b></div>
+          </div>`;
+
+        if (markers[b.id]) {
+          animateTo(markers[b.id], pos);
+          infoWindows[b.id].setContent(content);
+        } else {
+          const iw = new google.maps.InfoWindow({ content });
+          const m = new google.maps.Marker({
+            position: pos,
+            map,
+            icon: busIcon(),
+            title: `Line ${b.line} to ${b.destination}`
+          });
+          m.addListener("click", () => {
+            Object.values(infoWindows).forEach(w => w.close());
+            iw.open(map, m);
+          });
+          markers[b.id] = m;
+          infoWindows[b.id] = iw;
+        }
+      });
+
+      Object.keys(markers).forEach(id => {
+        if (!currentIds.has(id)) {
+          markers[id].setMap(null);
+          delete markers[id];
+          delete infoWindows[id];
+        }
+      });
+
+      if (buses.length > 0) {
+        const bounds = new google.maps.LatLngBounds();
+        buses.forEach(b => bounds.extend({ lat: b.lat, lng: b.lon }));
+        map.fitBounds(bounds);
+      }
+
+      document.getElementById("count").textContent = buses.length + " buses";
+      document.getElementById("route-label").textContent = currentRoute;
+      document.getElementById("ts").textContent = new Date().toLocaleTimeString();
+
+    } catch(e) {
+      console.error(e);
+    }
+  }
+
+  document.addEventListener("DOMContentLoaded", () => {
+    document.getElementById("route-input").addEventListener("keypress", e => {
+      if (e.key === "Enter") searchRoute();
+    });
+  });
+</script>
+<script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyC9D6eu3Jrhd_jmv4MmoAstv2hk2vo5T14&callback=initMap" async defer></script>
+</body>
+</html>
