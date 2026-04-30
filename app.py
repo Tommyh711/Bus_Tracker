@@ -41,7 +41,7 @@ def fetch_buses_from_bods(line=None):
     buses = []
     
     # BODS returns SIRI-VM XML format rather than JSON
-    # parsing through it manually to extract the data we need - this is my own work
+    # parsing through it manually to extract the data we need
     root = ET.fromstring(resp.content)
     
     for activity in root.iter("{http://www.siri.org.uk/siri}VehicleActivity"):
@@ -96,6 +96,6 @@ def get_all_buses():
         return jsonify({"error": str(e)}), 500
 
 
-# runs locally - on Railway the Procfile uses gunicorn instead
+# runs locally on Railway so the Procfile uses gunicorn instead
 if __name__ == "__main__":
     app.run(debug=True)
