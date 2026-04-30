@@ -1,4 +1,8 @@
 # bus tracker 
+# third party libraries used: Flask, flask-cors, requests, xml.etree (all via pip)
+# BODS API is a UK government third party service - data.bus-data.dft.gov.uk
+# all of the server logic, XML parsing and API integration was written by me
+
 # this file is the backend server for the live bus tracking component
 # it uses Flask to create a REST API that the map frontend calls every 10 seconds
 # it fetches real time bus location data from the UK governments BODS API
