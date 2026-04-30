@@ -1,4 +1,8 @@
 <!DOCTYPE html>
+<!-- Clapham Live Bus Tracker - Tom H -->
+<!-- single page HTML/JS frontend that displays live bus locations on a Google Map -->
+<!-- fetches data from the Flask server on Railway every 10 seconds -->
+<!-- hosted on GitHub Pages so anyone can access it via a link in the Flutter app -->
 <html>
 <head>
 <meta charset="UTF-8">
@@ -6,8 +10,8 @@
 <style>
   * { margin:0; padding:0; box-sizing:border-box; }
   body { background:#f5f5f5; font-family: monospace; }
-
-  /* top bar */
+ 
+  /* top bar showing live bus counts and last update time */
   #bar {
     background:#ffffff;
     border-bottom: 2px solid #E8002D;
@@ -16,15 +20,16 @@
     gap: 24px;
     align-items: center;
   }
-
+ 
   .logo { font-size:1.4rem; font-weight:900; color:#E8002D; letter-spacing:3px; }
   .logo span { color:#333; }
   .sl { font-size:8px; color:#999; text-transform:uppercase; letter-spacing:1px; }
   .sv { font-size:13px; color:#E8002D; font-weight:700; }
-
+ 
+  /* map fills the rest of the screen below the top bar */
   #map { width:100%; height: calc(100vh - 52px); }
-
-  /* legend bottom left */
+ 
+  /* legend in the bottom left corner showing route colours */
   #legend {
     position: fixed;
     bottom: 30px;
@@ -36,7 +41,7 @@
     z-index: 999;
     box-shadow: 0 2px 8px rgba(0,0,0,0.1);
   }
-
+ 
   .leg-item {
     display: flex;
     align-items: center;
@@ -45,9 +50,9 @@
     font-size: 12px;
     color: #333;
   }
-
+ 
   .leg-item:last-child { margin-bottom: 0; }
-
+ 
   .leg-dot {
     width: 14px;
     height: 14px;
@@ -56,7 +61,8 @@
 </style>
 </head>
 <body>
-
+ 
+<!-- top bar displays live counts for each route and the last refresh time -->
 <div id="bar">
   <div class="logo">BUS<span>LIVE</span></div>
   <div><div class="sl">Route 35</div><div class="sv" id="count35">loading...</div></div>
@@ -64,37 +70,45 @@
   <div><div class="sl">Route 345</div><div class="sv" id="count345">loading...</div></div>
   <div><div class="sl">Updated</div><div class="sv" id="ts">...</div></div>
 </div>
-
+ 
+<!-- Google Maps renders into this div -->
 <div id="map"></div>
-
+ 
+<!-- colour coded legend so users can identify which route each marker belongs to -->
 <div id="legend">
   <div class="leg-item"><div class="leg-dot" style="background:#E8002D;"></div> Route 35</div>
   <div class="leg-item"><div class="leg-dot" style="background:#1a73e8;"></div> Route 37</div>
   <div class="leg-item"><div class="leg-dot" style="background:#00a854;"></div> Route 345</div>
 </div>
-
+ 
 <script>
-  // server url points to railway
+  // URL of the Flask backend server hosted on Railway
+  // Railway is a third party cloud platform that keeps the server running 24/7
   const SERVER = "https://web-production-cce23.up.railway.app";
-
-  // colours for each route
+ 
+  // each of the three Clapham routes gets a distinct colour
+  // so users can tell them apart on the map at a glance
   const ROUTE_COLOURS = {
-    "35": "#E8002D",
-    "37": "#1a73e8",
-    "345": "#00a854"
+    "35": "#E8002D",  // red
+    "37": "#1a73e8",  // blue
+    "345": "#00a854"  // green
   }
-
-  // store markers and info windows so we can update them
+ 
+  // these objects store references to all markers and info windows currently on the map
+  // keyed by a unique ID combining route and vehicle reference
+  // this allows us to update existing markers rather than removing and recreating them
   let map;
   let markers = {};
   let infoWindows = {};
-
+ 
+  // initMap is called automatically by the Google Maps API once it has loaded
+  // Google Maps API is a third party service used for map rendering and marker display
   function initMap() {
-    // centre map on clapham
+    // initialise the map centred on Clapham
     map = new google.maps.Map(document.getElementById("map"), {
       center: { lat: 51.461, lng: -0.138 },
       zoom: 13,
-      // light grey map style
+      // custom light grey style applied so the coloured bus markers stand out clearly
       styles: [
         { elementType: "geometry", stylers: [{ color: "#f5f5f5" }] },
         { elementType: "labels.text.fill", stylers: [{ color: "#555555" }] },
@@ -110,22 +124,23 @@
         { featureType: "transit", stylers: [{ visibility: "off" }] },
       ]
     });
-
-    // load all 3 routes straight away
+ 
+    // fetch all three routes immediately on page load
     fetchAll();
-    // refresh every 10 seconds
+    // then automatically refresh every 10 seconds to keep locations up to date
     setInterval(fetchAll, 10000);
   }
-
-  // fetch all routes
+ 
+  // calls fetchRoute for all three Clapham routes and updates the timestamp
   function fetchAll() {
     fetchRoute("35");
     fetchRoute("37");
     fetchRoute("345");
     document.getElementById("ts").textContent = new Date().toLocaleTimeString();
   }
-
-  // bus icon with colour and route number on it
+ 
+  // creates a circular marker icon in the correct route colour
+  // route number is displayed as a label directly on the marker
   function makeBusIcon(colour) {
     return {
       path: google.maps.SymbolPath.CIRCLE,
@@ -136,8 +151,10 @@
       scale: 14,
     };
   }
-
-  // smooth move animation when bus updates position
+ 
+  // smoothly animates a marker from its current position to a new position
+  // uses an easing equation so movement decelerates naturally rather than jumping
+  // this makes the map feel live and responsive rather than static
   function animateTo(marker, newPos) {
     const start = marker.getPosition();
     const sLat = start.lat();
@@ -148,6 +165,7 @@
     const t = setInterval(() => {
       step++;
       const p = step / 50;
+      // easing equation - movement slows down as it approaches the target position
       const e = p < 0.5 ? 2*p*p : -1+(4-2*p)*p;
       marker.setPosition({
         lat: sLat + (eLat - sLat) * e,
@@ -156,7 +174,10 @@
       if (step >= 50) clearInterval(t);
     }, 20);
   }
-
+ 
+  // fetches live bus data for a single route from the Railway server
+  // if the bus is already on the map it smoothly moves it to the new position
+  // if it is a new bus it creates a fresh marker for it
   async function fetchRoute(line) {
     try {
       const resp = await fetch(SERVER + "/buses/" + line);
@@ -164,13 +185,15 @@
       const buses = data.buses || [];
       const colour = ROUTE_COLOURS[line];
       const currentIds = new Set();
-
+ 
       buses.forEach(b => {
+        // unique key per vehicle so we can track it across refreshes
         const busKey = line + "_" + b.id;
         currentIds.add(busKey);
         const pos = { lat: b.lat, lng: b.lon };
-
-        // info popup when you click a bus
+ 
+        // popup content shown when a user clicks on a bus marker
+        // displays route, destination, vehicle ID, operator and bearing
         const content = "<div style='background:#fff;padding:12px;font-family:monospace;font-size:12px;color:#333;border:2px solid " + colour + ";min-width:180px;border-radius:8px'>" +
           "<div style='color:" + colour + ";font-size:15px;font-weight:900;margin-bottom:6px'>Route " + b.line + "</div>" +
           "<div><span style='color:#999'>To: </span><b style='color:#333'>" + b.destination + "</b></div>" +
@@ -178,18 +201,19 @@
           "<div><span style='color:#999'>Operator: </span><b style='color:#333'>" + b.operator + "</b></div>" +
           "<div><span style='color:#999'>Bearing: </span><b style='color:#333'>" + b.bearing + "deg</b></div>" +
           "</div>";
-
+ 
         if (markers[busKey]) {
-          // already on map so just update position
+          // bus already exists on map - animate it to its new position
           animateTo(markers[busKey], pos);
           infoWindows[busKey].setContent(content);
         } else {
-          // new bus so create marker
+          // new bus - create a marker and info window for it
           const iw = new google.maps.InfoWindow({ content });
           const m = new google.maps.Marker({
             position: pos,
             map,
             icon: makeBusIcon(colour),
+            // route number displayed directly on the marker without needing to click
             label: {
               text: line,
               color: "#ffffff",
@@ -198,19 +222,20 @@
             },
             title: "Route " + b.line + " to " + b.destination
           });
-
-          // click marker to see bus info
+ 
+          // clicking a marker closes any open popups and opens this one
           m.addListener("click", () => {
             Object.values(infoWindows).forEach(w => w.close());
             iw.open(map, m);
           });
-
+ 
           markers[busKey] = m;
           infoWindows[busKey] = iw;
         }
       });
-
-      // clear buses no longer in the feed
+ 
+      // remove markers for buses that are no longer in the BODS feed
+      // handles buses that have finished their route or gone offline
       Object.keys(markers).forEach(key => {
         if (key.startsWith(line + "_") && !currentIds.has(key)) {
           markers[key].setMap(null);
@@ -218,15 +243,19 @@
           delete infoWindows[key];
         }
       });
-
-      // update count in top bar
+ 
+      // update the bus count displayed in the top bar
       document.getElementById("count" + line).textContent = buses.length + " buses";
-
+ 
     } catch(e) {
       console.log("error fetching route " + line, e);
     }
   }
 </script>
+ 
+<!-- loads the Google Maps JavaScript API - this is a third party service -->
+<!-- callback=initMap tells it to call our initMap function once loaded -->
 <script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyC9D6eu3Jrhd_jmv4MmoAstv2hk2vo5T14&callback=initMap" async defer></script>
 </body>
 </html>
+ 
