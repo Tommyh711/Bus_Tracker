@@ -1,4 +1,4 @@
-# bus tracker backend - Tom H
+# bus tracker backend 
 # Flask server that fetches live bus data from the BODS API and returns it as JSON
 # third party: Flask, flask-cors, requests (pip libraries), BODS API (UK government)
 
