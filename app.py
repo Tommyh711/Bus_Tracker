@@ -1,4 +1,4 @@
-# bus tracker - Tom H
+# bus tracker 
 # this file is the backend server for the live bus tracking component
 # it uses Flask to create a REST API that the map frontend calls every 10 seconds
 # it fetches real time bus location data from the UK governments BODS API
